@@ -1,6 +1,7 @@
 var raycaster = new THREE.Raycaster()
 var mouse = new THREE.Vector2()
 
+const enableAnimation = true
 const ratio = window.devicePixelRatio
 
 const renderer = new THREE.WebGLRenderer()
@@ -15,6 +16,7 @@ const camera = new THREE.PerspectiveCamera(
 
 const controls = new OrbitControls(camera, renderer.domElement)
 camera.position.z = ratio * 10
+camera.position.y = 10
 
 controls.rotateSpeed = 0.5
 controls.minDistance = ratio + 1.2
@@ -56,31 +58,100 @@ const makeSphere = (ratio = 1, color = 0x000000) => {
   return sphere
 }
 
-const makeInside = (ratio = 1, color = 0x000000) => {
-  const width = ratio * 1
-  const height = ratio * 1
+const makeInside = (
+  ratio = 1,
+  map = [0, 0, 18, 0, 9, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+) => {
+  const meshWidth = ratio * 0.525
+  const meshHeight = ratio * 0.525
 
-  const geometry = new THREE.PlaneGeometry(width, height)
+  const tileHeight = 64,
+    tileWidth = 130,
+    tileNumber = 4,
+    texWidth = 130,
+    texHeight = 230,
+    rows = 9,
+    width = tileWidth * tileNumber,
+    height = tileWidth * tileNumber
+
+  const ctx = document.createElement("canvas").getContext("2d")
+  ctx.canvas.width = width
+  ctx.canvas.height = height
+
+  ctx.translate(width / 2, tileHeight * 2.5)
+
+  const texture = new THREE.CanvasTexture(ctx.canvas)
+
+  const drawFromMap = (img: any, tileMap: number[]) => {
+    clear()
+
+    tileMap.forEach((t: number, i: number) => {
+      const x = Math.trunc(i / tileNumber)
+      const y = Math.trunc(i % tileNumber)
+      const row = Math.trunc(t / rows)
+      const col = Math.trunc(t % rows)
+      drawTile(img, x, y, row, col)
+    })
+  }
+
+  const clear = () => {
+    ctx.clearRect(-width, -height, width * 2, height * 2)
+  }
+
+  const drawTile = (
+    img: any,
+    x: number,
+    y: number,
+    row: number,
+    col: number
+  ) => {
+    ctx.save()
+    ctx.translate(((y - x) * tileWidth) / 2, ((x + y) * tileHeight) / 2)
+    ctx.drawImage(
+      img,
+      row * texWidth,
+      col * texHeight,
+      texWidth,
+      texHeight,
+      -tileHeight,
+      -tileWidth,
+      texWidth,
+      texHeight
+    )
+    ctx.restore()
+  }
+
+  const geometry = new THREE.PlaneGeometry(meshWidth, meshHeight)
   const material = new THREE.MeshBasicMaterial({
-    color,
+    map: texture,
   })
-  const grid = new THREE.Mesh(geometry, material)
+  const mesh = new THREE.Mesh(geometry, material)
 
-  scene.add(grid)
-  return grid
+  fetch("./Texture.png").then(async (image) => {
+    const img = await createImageBitmap(await image.blob())
+    drawFromMap(img, map)
+
+    texture.needsUpdate = true
+  })
+
+  scene.add(mesh)
+
+  return mesh
 }
+
+let mapInside: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> = null
 
 const makeTiles = (ratio = 1, length = 10000) => {
   const meshTiles: Tile[] = []
   // make tiles that have depth
-  const width = ratio * 0.025
-  const height = ratio * 0.025
+  const width = ratio * 0.029
+  const height = ratio * 0.029
   const tilesColor = [
     0x00ff00, 0x00ff00, 0x00ff00, 0x00ff00, 0xffffff, 0xffffff, 0x00c3ff,
     0xffa240,
   ]
   // change to array of objects and change the color of the tile
-  const tiles: Tiles = Array.from({ length }, () => {
+  const tiles: Tiles = Array.from({ length }, (_, i) => {
     const color = tilesColor[Math.floor(Math.random() * tilesColor.length)]
     const geometry = new THREE.PlaneGeometry(width, height)
     const material = new THREE.MeshBasicMaterial({
@@ -88,20 +159,23 @@ const makeTiles = (ratio = 1, length = 10000) => {
       side: THREE.DoubleSide,
     })
 
-    return { tile: new THREE.Mesh(geometry, material), color }
+    return { tile: new THREE.Mesh(geometry, material), color, id: i + 1 }
   })
 
-  tiles.forEach(({ tile, color }, i) => {
-    const phi = Math.acos(-1 + (2 * i) / length)
-    const theta = Math.sqrt(length * Math.PI) * phi
-    // position from top to bottom
+  const tileLength = length + 1
+
+  tiles.forEach(({ tile, color, id }) => {
+    const phi = Math.acos(-1 + (2 * id) / tileLength)
+    const theta = Math.sqrt(tileLength * Math.PI) * phi
+
     tile.position.setFromSphericalCoords(ratio, phi, theta)
     tile.position.normalize()
     tile.position.multiplyScalar(ratio)
 
+    tile.name = `${id}`
+
     tile.lookAt(0, 0, 0)
 
-    tile.name = `tile-${i}`
     tile.mouseenter = () => {
       console.log("mouseenter", tile.name)
       div.style.cursor = "pointer"
@@ -119,24 +193,34 @@ const makeTiles = (ratio = 1, length = 10000) => {
     tile.click = () => {
       console.log("click", tile.name)
 
-      tweenAnimation = new TWEEN.Tween(camera.position)
-        .to(
-          {
-            x: tile.position.x,
-            y: tile.position.y,
-            z: tile.position.z,
-          },
-          1000
-        )
-        .easing(TWEEN.Easing.Quadratic.Out)
-        .start()
+      div.style.cursor = "default"
 
-      tweenAnimation.onStart(() => {
-        console.log("tween start")
-        div.style.cursor = "default"
+      gridLoading.lookAt(tile.position)
+      mapInside.lookAt(tile.position)
 
-        grid.lookAt(tile.position)
-      })
+      if (enableAnimation) {
+        tweenAnimation = new TWEEN.Tween(camera.position)
+          .to(
+            {
+              x: tile.position.x,
+              y: tile.position.y,
+              z: tile.position.z,
+            },
+            1000
+          )
+          .easing(TWEEN.Easing.Quadratic.Out)
+          .start()
+
+        tweenAnimation.onComplete(() => {
+          // mapInside = makeInside(
+          //   1,
+          //   [0, 0, 18, 0, 9, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          // )
+          // mapInside.lookAt(camera.position)
+        })
+      } else {
+        camera.position.set(tile.position.x, tile.position.y, tile.position.z)
+      }
     }
 
     meshTiles.push(tile)
@@ -146,11 +230,28 @@ const makeTiles = (ratio = 1, length = 10000) => {
   return meshTiles
 }
 
-const sphere = makeSphere(ratio),
-  grid = makeInside(ratio),
-  tiles = makeTiles(ratio)
+const makeLoading = (ratio = 1, color = 0x000000) => {
+  const width = ratio * 1
+  const height = ratio * 1
 
-const objects = [sphere, grid, ...tiles]
+  const geometry = new THREE.PlaneGeometry(width, height)
+  const material = new THREE.MeshBasicMaterial({
+    color,
+  })
+  const loading = new THREE.Mesh(geometry, material)
+
+  scene.add(loading)
+  return loading
+}
+
+const sphere = makeSphere(ratio)
+const gridLoading = makeLoading(ratio)
+const tiles = makeTiles(ratio)
+
+mapInside = makeInside()
+
+// const objects = []
+const objects = [sphere, gridLoading, ...tiles]
 
 let draged = false
 let isMouseDown = false
@@ -227,25 +328,35 @@ function detectMesh(event: MouseEvent) {
 const zoomBack = (event: MouseEvent) => {
   event.preventDefault()
 
-  tweenAnimation = new TWEEN.Tween(camera.position)
-    .to(lastPostion, 1000)
-    .easing(TWEEN.Easing.Quadratic.Out)
-    .start()
+  if (enableAnimation) {
+    tweenAnimation = new TWEEN.Tween(camera.position)
+      .to(lastPostion, 1000)
+      .easing(TWEEN.Easing.Quadratic.Out)
+      .start()
 
-  tweenAnimation.onComplete(() => {
+    tweenAnimation.onComplete(() => {
+      controls.enabled = true
+      controls.minDistance = ratio + 0.2
+
+      div.addEventListener("click", detectMesh)
+      div.addEventListener("mousemove", detectMesh)
+      div.removeEventListener("contextmenu", zoomBack)
+    })
+  } else {
+    camera.position.set(lastPostion.x, lastPostion.y, lastPostion.z)
     controls.enabled = true
     controls.minDistance = ratio + 0.2
 
     div.addEventListener("click", detectMesh)
     div.addEventListener("mousemove", detectMesh)
     div.removeEventListener("contextmenu", zoomBack)
-  })
+  }
 }
 
 function animate() {
   requestAnimationFrame(animate)
 
-  TWEEN.update()
+  if (enableAnimation) TWEEN.update()
 
   controls.update()
   renderer.render(scene, camera)
@@ -265,4 +376,4 @@ interface Tile
 
 type Intersects = { object: Tile }[] | undefined
 
-type Tiles = { tile: Tile; color: number }[]
+type Tiles = { tile: Tile; color: number; id: number }[]
