@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "target": "esnext",
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "outDir": "public/js/",
+    "rootDir": "src",
+    "typeRoots": ["node_modules/@types", "src/global.d.ts"]
+  }
+}

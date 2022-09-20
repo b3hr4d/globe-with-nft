@@ -1,0 +1,27 @@
+{
+  "name": "globe-with-nft",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "/Users/B3HR4D/.cloud/Git/globe-with-nft.git",
+  "author": "b3hr4d <behradmusiclove@yahoo.com>",
+  "license": "MIT",
+  "scripts": {
+    "start": "tsc -w",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@tweenjs/tween.js": "^18.6.4",
+    "d3": "^7.6.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-globe.gl": "^2.22.3",
+    "three": "^0.144.0"
+  },
+  "devDependencies": {
+    "@types/d3": "^7.4.0",
+    "@types/react": "^18.0.20",
+    "@types/react-dom": "^18.0.6",
+    "@types/three": "^0.144.0",
+    "@types/tweenjs": "^1.0.4"
+  }
+}
