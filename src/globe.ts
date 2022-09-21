@@ -35,7 +35,6 @@ div.addEventListener("mousemove", detectMesh)
 
 let hoveredTile = null
 let lastPostion = { x: 0, y: 0, z: 0 }
-let tweenAnimation = null
 
 const makeSphere = (ratio = 1, color = 0x000000) => {
   // make sphere and show it from side
@@ -199,7 +198,8 @@ const makeTiles = (ratio = 1, length = 10000) => {
       mapInside.lookAt(tile.position)
 
       if (enableAnimation) {
-        tweenAnimation = new TWEEN.Tween(camera.position)
+        // animate the camera to x, y then to z
+        new TWEEN.Tween(camera.position)
           .to(
             {
               x: tile.position.x,
@@ -209,15 +209,17 @@ const makeTiles = (ratio = 1, length = 10000) => {
             1000
           )
           .easing(TWEEN.Easing.Quadratic.Out)
+          .onUpdate(() => {
+            camera.lookAt(0, 0, 0)
+          })
+          .onComplete(() => {
+            // mapInside = makeInside(
+            //   1,
+            //   [0, 0, 18, 0, 9, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            // )
+            // mapInside.lookAt(camera.position)
+          })
           .start()
-
-        tweenAnimation.onComplete(() => {
-          // mapInside = makeInside(
-          //   1,
-          //   [0, 0, 18, 0, 9, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-          // )
-          // mapInside.lookAt(camera.position)
-        })
       } else {
         camera.position.set(tile.position.x, tile.position.y, tile.position.z)
       }
@@ -329,19 +331,28 @@ const zoomBack = (event: MouseEvent) => {
   event.preventDefault()
 
   if (enableAnimation) {
-    tweenAnimation = new TWEEN.Tween(camera.position)
-      .to(lastPostion, 1000)
+    // animate zoom back the camera to x, y then to z on last position
+    new TWEEN.Tween(camera.position)
+      .to(
+        {
+          x: lastPostion.x,
+          y: lastPostion.y,
+          z: lastPostion.z,
+        },
+        1000
+      )
       .easing(TWEEN.Easing.Quadratic.Out)
+      .onUpdate(() => {
+        camera.lookAt(0, 0, 0)
+      })
+      .onComplete(() => {
+        controls.enabled = true
+        controls.minDistance = ratio + 1.2
+        div.addEventListener("click", detectMesh)
+        div.addEventListener("mousemove", detectMesh)
+        div.removeEventListener("contextmenu", zoomBack)
+      })
       .start()
-
-    tweenAnimation.onComplete(() => {
-      controls.enabled = true
-      controls.minDistance = ratio + 0.2
-
-      div.addEventListener("click", detectMesh)
-      div.addEventListener("mousemove", detectMesh)
-      div.removeEventListener("contextmenu", zoomBack)
-    })
   } else {
     camera.position.set(lastPostion.x, lastPostion.y, lastPostion.z)
     controls.enabled = true
@@ -354,13 +365,11 @@ const zoomBack = (event: MouseEvent) => {
 }
 
 function animate() {
+  TWEEN.update()
   requestAnimationFrame(animate)
-
-  if (enableAnimation) TWEEN.update()
-
-  controls.update()
   renderer.render(scene, camera)
 }
+controls.update()
 
 animate()
 

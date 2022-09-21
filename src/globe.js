@@ -77,7 +77,6 @@ div.addEventListener("mousedown", detectMesh);
 div.addEventListener("mousemove", detectMesh);
 var hoveredTile = null;
 var lastPostion = { x: 0, y: 0, z: 0 };
-var tweenAnimation = null;
 var makeSphere = function (ratio, color) {
     if (ratio === void 0) { ratio = 1; }
     if (color === void 0) { color = 0x000000; }
@@ -197,21 +196,25 @@ var makeTiles = function (ratio, length) {
             gridLoading.lookAt(tile.position);
             mapInside.lookAt(tile.position);
             if (enableAnimation) {
-                tweenAnimation = new TWEEN.Tween(camera.position)
+                // animate the camera to x, y then to z
+                new TWEEN.Tween(camera.position)
                     .to({
                     x: tile.position.x,
                     y: tile.position.y,
                     z: tile.position.z
                 }, 1000)
                     .easing(TWEEN.Easing.Quadratic.Out)
-                    .start();
-                tweenAnimation.onComplete(function () {
+                    .onUpdate(function () {
+                    camera.lookAt(0, 0, 0);
+                })
+                    .onComplete(function () {
                     // mapInside = makeInside(
                     //   1,
                     //   [0, 0, 18, 0, 9, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
                     // )
                     // mapInside.lookAt(camera.position)
-                });
+                })
+                    .start();
             }
             else {
                 camera.position.set(tile.position.x, tile.position.y, tile.position.z);
@@ -304,17 +307,25 @@ function detectMesh(event) {
 var zoomBack = function (event) {
     event.preventDefault();
     if (enableAnimation) {
-        tweenAnimation = new TWEEN.Tween(camera.position)
-            .to(lastPostion, 1000)
+        // animate zoom back the camera to x, y then to z on last position
+        new TWEEN.Tween(camera.position)
+            .to({
+            x: lastPostion.x,
+            y: lastPostion.y,
+            z: lastPostion.z
+        }, 1000)
             .easing(TWEEN.Easing.Quadratic.Out)
-            .start();
-        tweenAnimation.onComplete(function () {
+            .onUpdate(function () {
+            camera.lookAt(0, 0, 0);
+        })
+            .onComplete(function () {
             controls.enabled = true;
-            controls.minDistance = ratio + 0.2;
+            controls.minDistance = ratio + 1.2;
             div.addEventListener("click", detectMesh);
             div.addEventListener("mousemove", detectMesh);
             div.removeEventListener("contextmenu", zoomBack);
-        });
+        })
+            .start();
     }
     else {
         camera.position.set(lastPostion.x, lastPostion.y, lastPostion.z);
@@ -326,10 +337,37 @@ var zoomBack = function (event) {
     }
 };
 function animate() {
+    TWEEN.update();
     requestAnimationFrame(animate);
-    if (enableAnimation)
-        TWEEN.update();
-    controls.update();
     renderer.render(scene, camera);
 }
+controls.update();
 animate();
+// convert each function to react component and hook
+var useThree = function () {
+    var dom = React.useRef(null);
+    var _a = React.useState(), scene = _a[0], setScene = _a[1];
+    var _b = React.useState(), camera = _b[0], setCamera = _b[1];
+    var _c = React.useState(), renderer = _c[0], setRenderer = _c[1];
+    var _d = React.useState(), controls = _d[0], setControls = _d[1];
+    React.useEffect(function () {
+        if (dom.current) {
+            var scene_1 = new THREE.Scene();
+            var camera_1 = new THREE.PerspectiveCamera(75, dom.current.clientWidth / dom.current.clientHeight, 0.1, 1000);
+            var renderer_1 = new THREE.WebGLRenderer();
+            renderer_1.setSize(dom.current.clientWidth, dom.current.clientHeight);
+            dom.current.appendChild(renderer_1.domElement);
+            var controls_1 = new OrbitControls(camera_1, renderer_1.domElement);
+            controls_1.enableDamping = true;
+            controls_1.dampingFactor = 0.25;
+            controls_1.enableZoom = true;
+            controls_1.minDistance = 1.2;
+            controls_1.maxDistance = 5;
+            setScene(scene_1);
+            setCamera(camera_1);
+            setRenderer(renderer_1);
+            setControls(controls_1);
+        }
+    }, []);
+    return { dom: dom, scene: scene, camera: camera, renderer: renderer, controls: controls };
+};
