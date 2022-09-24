@@ -9,8 +9,8 @@ class ThreeClass {
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
       alpha: true,
+      antialias: false,
     })
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.setPixelRatio(window.devicePixelRatio)
@@ -19,9 +19,10 @@ class ThreeClass {
       75,
       window.innerWidth / window.innerHeight,
       0.1,
-      1000
+      2000
     )
-    this.camera.position.z = 2
+    // rotate camera to show bottom of globe
+    this.camera.position.z = 1000
 
     this.scene = new THREE.Scene()
 
@@ -30,8 +31,8 @@ class ThreeClass {
     this.controls.dampingFactor = 0.25
     this.controls.enableZoom = true
     this.controls.enablePan = false
-    this.controls.minDistance = 1.2
-    this.controls.maxDistance = 5
+    this.controls.minDistance = 600
+    this.controls.maxDistance = 1200
   }
 }
 
@@ -42,15 +43,13 @@ const GlobeContext = React.createContext<ThreeContext>(defaultValues)
 const useThree = () => React.useContext(GlobeContext)
 
 const ThreeProvider = ({ children }: { children: React.ReactNode }) => {
+  const globeRef = React.useRef<HTMLDivElement>()
   const { renderer, camera, scene } = useThree()
 
-  const domRef = (ref: HTMLDivElement) => {
-    if (ref) {
-      ref.appendChild(renderer.domElement)
-    }
-  }
-
   React.useEffect(() => {
+    if (globeRef) {
+      globeRef.current.appendChild(renderer.domElement)
+    }
     const animate = () => {
       requestAnimationFrame(animate)
       renderer.render(scene, camera)
@@ -70,11 +69,24 @@ const ThreeProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [])
 
+  const takeScreenshot = () => {
+    // open in new window like this
+    //
+    var w = window.open("", "")
+    w.document.title = "Screenshot"
+    //w.document.body.style.backgroundColor = "red";
+    var img = new Image()
+    // Without 'preserveDrawingBuffer' set to true, we must render now
+    img.src = renderer.domElement.toDataURL()
+
+    w.document.body.appendChild(img)
+  }
+
   return (
     <div
-      ref={domRef}
+      ref={globeRef}
       style={{
-        backgroundColor: "black",
+        backgroundColor: "#1b1b1b",
         position: "absolute",
         top: 0,
         left: 0,
@@ -83,6 +95,16 @@ const ThreeProvider = ({ children }: { children: React.ReactNode }) => {
       }}
     >
       {children}
+      <button
+        onClick={takeScreenshot}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+        }}
+      >
+        Take Screenshot
+      </button>
     </div>
   )
 }
@@ -101,14 +123,15 @@ interface SphereProps {
 const Sphere: React.FC<SphereProps> = ({
   debug = false,
   ratio = 1,
+  radius = 1,
   ...rest
 }) => {
   const { scene } = useThree()
 
   React.useEffect(() => {
-    const geometry = new THREE.SphereGeometry(ratio, 64, 64)
+    const geometry = new THREE.SphereGeometry(radius, 64, 64)
     const material = new THREE.MeshBasicMaterial({
-      color: 0x000000,
+      color: 0xffffff,
       wireframe: debug,
       ...rest,
     })
@@ -119,7 +142,7 @@ const Sphere: React.FC<SphereProps> = ({
     return () => {
       scene.remove(sphere)
     }
-  }, [])
+  }, [radius])
 
   return null
 }
@@ -151,7 +174,7 @@ const MapTiles: React.FC<MapTilesProps> = ({
   tiles,
   debug = false,
   ratio = 1,
-  raidus = 1,
+  raidus = 500,
   ...rest
 }) => {
   const { scene } = useThree()
@@ -170,9 +193,8 @@ const MapTiles: React.FC<MapTilesProps> = ({
       })
 
       const tile = new THREE.Mesh(geometry, material)
-      tile.position.setFromSphericalCoords(raidus * ratio, phi, theta)
+      tile.position.setFromSphericalCoords(raidus, phi, theta)
 
-      tile.position.setFromSphericalCoords(ratio, phi, theta)
       tile.position.normalize()
       tile.position.multiplyScalar(ratio)
 
@@ -187,6 +209,58 @@ const MapTiles: React.FC<MapTilesProps> = ({
       scene.remove(group)
     }
   }, [tiles])
+
+  return null
+}
+
+const MapDots = ({ radius }) => {
+  const { scene } = useThree()
+
+  React.useEffect(() => {
+    const group = new THREE.Group()
+
+    // Create 60000 tiny dots and spiral them around the sphere.
+    const DOT_COUNT = 60000
+
+    // A hexagon with a radius of 2 pixels looks like a circle
+    const dotGeometry = new THREE.CircleGeometry(2, 5)
+    const dotMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      side: THREE.DoubleSide,
+    })
+    // The XYZ coordinate of each dot
+    const positions = []
+
+    // A random identifier for each dot
+    const rndId = []
+
+    // The country border each dot falls within
+    const countryIds = []
+
+    const vector = new THREE.Vector3()
+
+    for (let i = DOT_COUNT; i >= 0; i--) {
+      const phi = Math.acos(-1 + (2 * i) / DOT_COUNT)
+      const theta = Math.sqrt(DOT_COUNT * Math.PI) * phi
+
+      // Pass the angle between this dot an the Y-axis (phi)
+      // Pass this dot’s angle around the y axis (theta)
+      // Scale each position by 600 (the radius of the globe)
+
+      // Move the dot to the newly calculated position
+      // Add the dot to the scene
+      const dot = new THREE.Mesh(dotGeometry, dotMaterial)
+      dot.position.setFromSphericalCoords(radius, phi, theta)
+      dot.lookAt(0, 0, 0)
+
+      group.add(dot)
+    }
+    scene.add(group)
+
+    return () => {
+      scene.remove(sphere)
+    }
+  }, [radius])
 
   return null
 }
@@ -206,14 +280,18 @@ const App = () => {
     fetchTiles()
   }, [])
 
+  const radius = 600
+
   return (
     <ThreeProvider>
       {loading ? (
         "Loading..."
       ) : (
         <React.Fragment>
-          <Sphere />
-          <MapTiles tiles={tiles} />
+          <Sphere radius={radius} />
+          <MapDots radius={radius} />
+          {/* <MapTiles tiles={tiles} /> */}
+          {/* <MapTilesFlat tiles={tiles} /> */}
         </React.Fragment>
       )}
     </ThreeProvider>
