@@ -1,4 +1,3 @@
-import Points from "./points.js"
 import {
   AmbientLight,
   Group,
@@ -6,12 +5,14 @@ import {
   MeshLambertMaterial,
   OrthographicCamera,
   PointLight,
+  Raycaster,
   Scene,
   SphereGeometry,
   Vector2,
   Vector3,
   WebGLRenderer,
-} from "./three.module.js"
+} from "../public/packages/three.module.js"
+import Points from "./points.js"
 
 function C(t, i, e, s) {
   const a = t / s - 1
@@ -23,9 +24,9 @@ function define(e, r, n) {
     r in e
       ? Object.defineProperty(e, r, {
           value: n,
-          enumerable: !0,
-          configurable: !0,
-          writable: !0,
+          enumerable: true,
+          configurable: true,
+          writable: true,
         })
       : (e[r] = n),
     e
@@ -45,20 +46,20 @@ class Globe {
     define(this, "origin", new Vector3(0, 0, 0))
     define(this, "dom", {})
     define(this, "mouse", new Vector2())
-    define(this, "isDragging", !1)
-    define(this, "isStatic", !1)
-    define(this, "isDiscTextureLoaded", !1)
-    define(this, "globeOff", !1)
+    define(this, "isDragging", false)
+    define(this, "isStatic", false)
+    define(this, "globeOff", false)
+    define(this, "autoRotate", true)
     define(this, "scrollTop", 0)
     define(this, "globeOpacity", 0)
     define(this, "scene", new Scene())
     define(this, "globeRadius", 350)
     define(this, "globeSegments", 30)
-    define(this, "isLoaded", !1)
+    define(this, "isLoaded", false)
     define(this, "loaded", [])
     define(this, "loading", [])
-    define(this, "isScrolling", !1)
-    define(this, "isRevealed", !1)
+    define(this, "isScrolling", false)
+    define(this, "isRevealed", false)
     define(this, "frame", 0)
     define(this, "oldRotationY", 0)
     define(this, "oldRotationX", 0)
@@ -72,7 +73,7 @@ class Globe {
     define(this, "moveX", 0)
     define(this, "moveY", 0)
     define(this, "tension", 1)
-    define(this, "initialized", !1)
+    define(this, "initialized", false)
     define(this, "el", void 0)
     define(this, "isDotsOnly", void 0)
     define(this, "isLayers", void 0)
@@ -99,13 +100,31 @@ class Globe {
     define(this, "globeMap", void 0)
     define(this, "globeOuterLayerSphere", void 0)
     define(this, "globeFillSphere", void 0)
-    define(this, "handleDragStart", () => {
-      if ((this.isDragging = !0)) {
-        this.oldRotationX = this.globeContainer.rotation.x
-        this.oldRotationY = this.globeContainer.rotation.y
+    // click event
+    define(this, "handleClick", (e) => {
+      if (!this.isDragging) this.globeDots.handleMouseMove(e, this.camera)
+    })
 
-        document.documentElement.classList.add("is-globe-dragging")
+    define(this, "handleWheel", (e) => {
+      e.preventDefault()
+      const r = e.deltaY
+      this.targetScale += r / 1e3
+
+      if (this.targetScale < 0.5) {
+        this.targetScale = 0.5
       }
+
+      if (this.targetScale > 6) {
+        this.targetScale = 6
+      }
+    })
+    define(this, "handleDragStart", () => {
+      this.isDragging = true
+      this.globeDots.startDragging()
+      this.oldRotationX = this.globeContainer.rotation.x
+      this.oldRotationY = this.globeContainer.rotation.y
+
+      document.documentElement.classList.add("is-globe-dragging")
     })
     define(this, "handleTouchStart", (t) => {
       const i = t.touches[0] || t.changedTouches[0]
@@ -122,20 +141,22 @@ class Globe {
       this.mouse.y = t.clientY
       this.handleDragging()
     })
+
     define(this, "handleTouchMove", (t) => {
       const i = t.touches[0] || t.changedTouches[0]
       this.touchDistanceX = Math.abs(this.touchStartX - i.pageX)
       this.touchDistanceY = Math.abs(this.touchStartY - i.pageY)
-      this.touchDistanceY > this.touchDistanceX ||
-        ((this.mouse.x = i.pageX),
-        (this.mouse.y = i.pageY),
-        this.handleDragging())
+      if (this.touchDistanceY <= this.touchDistanceX) {
+        this.mouse.x = i.pageX
+        this.mouse.y = i.pageY
+        this.handleDragging()
+      }
     })
     define(this, "handleMouseUp", () => {
       setTimeout(() => {
         document.documentElement.classList.remove("is-globe-dragging")
       }, 20)
-      this.isDragging = !1
+      this.isDragging = false
       if (0 !== this.moveX || Math.abs(this.moveY) > 0)
         this.throwGlobe(this.moveX, this.moveY)
       this.oldMouseX = 0
@@ -143,6 +164,7 @@ class Globe {
       this.moveX = 0
       this.moveY = 0
       this.targetScale = 1
+      this.globeDots.stopDragging()
     })
     define(this, "handleMouseDown", (t) => {
       document.documentElement.classList.add("is-globe-dragging")
@@ -172,16 +194,16 @@ class Globe {
       }
     })
     define(this, "setWindowSize", () => {
-      ;(this.windowW = this.el.clientWidth),
-        (this.windowH = this.el.clientHeight),
-        (this.aspectRatio = 1),
-        this.renderer.setSize(this.windowW, this.windowH),
-        (this.oldInnerWidth = this.windowW)
+      this.windowW = this.el.clientWidth
+      this.windowH = this.el.clientHeight
+      this.aspectRatio = 1
+      this.renderer.setSize(this.windowW, this.windowH)
+      this.oldInnerWidth = this.windowW
     })
     define(this, "handleResize", () => {
-      const { clientWidth: t } = document.documentElement
-      ;(this.oldInnerWidth !== t || t > 512) &&
-        (this.setWindowSize(), this.addCamera())
+      const { clientWidth } = document.documentElement
+      if (this.oldInnerWidth !== clientWidth || clientWidth > 512)
+        this.setWindowSize(), this.addCamera()
     })
     this.el = e
     this.load()
@@ -195,6 +217,7 @@ class Globe {
       !!this.el.dataset.globeType && "layers" === this.el.dataset.globeType
     this.globeRadius = Math.min(this.el.clientWidth / 2 - 30, 350)
     this.addRenderer()
+    this.addRaycaster()
     this.addLighting()
     this.addGlobe()
     this.addListeners()
@@ -204,8 +227,10 @@ class Globe {
     this.play()
   }
   play() {
-    ;(this.initialized && this.isStatic) || this.render(this.frame),
-      (this.initialized = !0)
+    if (!this.initialized && !this.isStatic) {
+      this.render(this.frame)
+      this.initialized = true
+    }
   }
   pause() {}
   disconnect() {
@@ -222,24 +247,29 @@ class Globe {
     }
   }
   addCamera() {
-    const t = 0.5 * this.windowH,
-      i = -this.aspectRatio * this.windowH * 0.5,
-      e = 4 * this.globeRadius
-    this.camera || (this.camera = new OrthographicCamera(0, 0, 0, 0, 0, 0)),
-      (this.camera.left = i),
-      (this.camera.right = -i),
-      (this.camera.top = t),
-      (this.camera.bottom = -t),
-      (this.camera.near = -e),
-      (this.camera.far = e),
+    const height = 0.5 * this.windowH
+    const padding = -this.aspectRatio * this.windowH * 0.5
+    const far = 4 * this.globeRadius
+    if (!this.camera) {
+      this.camera = new OrthographicCamera(0, 0, 0, 0, 0, 0)
+      this.camera.left = padding
+      this.camera.right = -padding
+      this.camera.top = height
+      this.camera.bottom = -height
+      this.camera.near = -far
+      this.camera.far = far
       this.camera.updateProjectionMatrix()
+    }
   }
   addRenderer() {
-    this.renderer = new WebGLRenderer({ antialias: !1, alpha: !0 })
+    this.renderer = new WebGLRenderer({ antialias: false, alpha: true })
     this.renderer.setPixelRatio(window.devicePixelRatio)
     this.renderer.setClearColor(14540253, 0)
-    this.renderer.sortObjects = !1
+    this.renderer.sortObjects = false
     this.dom.container.appendChild(this.renderer.domElement)
+  }
+  addRaycaster() {
+    this.raycaster = new Raycaster()
   }
   addLighting() {
     const t = new AmbientLight(10086140, 1)
@@ -277,7 +307,7 @@ class Globe {
   }
   addGlobeFill() {
     this.globeFillMaterial = new MeshLambertMaterial({
-      transparent: !0,
+      transparent: false,
       opacity: 1,
       color: 1056824,
     })
@@ -305,7 +335,7 @@ class Globe {
     this.globeContainer.rotation.x = n
     Math.abs(e) > 0.001 ||
       (Math.abs(s) > 0.001 &&
-        !1 === this.isDragging &&
+        false === this.isDragging &&
         (this.throwAnimationFrame = requestAnimationFrame(() => {
           this.throwGlobe(e, s)
         })))
@@ -321,50 +351,56 @@ class Globe {
     return t - Math.floor(Math.abs(t / G)) * Math.sign(t) * G
   }
   addListeners() {
-    window.addEventListener("resize", this.handleResize),
-      this.isStatic ||
-        (window.addEventListener("mouseup", this.handleMouseUp),
-        window.addEventListener("mousemove", this.handleMouseMove),
-        this.el.addEventListener("touchstart", this.handleTouchStart, {
-          passive: !0,
-        }),
-        window.addEventListener("touchmove", this.handleTouchMove),
-        window.addEventListener("touchend", this.handleMouseUp),
-        this.el.addEventListener("mousedown", this.handleMouseDown))
+    window.addEventListener("resize", this.handleResize)
+
+    if (!this.isStatic) {
+      window.addEventListener("mouseup", this.handleMouseUp)
+      window.addEventListener("mousemove", this.handleMouseMove)
+      this.el.addEventListener("touchstart", this.handleTouchStart, {
+        passive: true,
+      })
+      window.addEventListener("touchmove", this.handleTouchMove)
+      window.addEventListener("touchend", this.handleMouseUp)
+      this.el.addEventListener("mousedown", this.handleMouseDown)
+      this.el.addEventListener("wheel", this.handleWheel)
+      this.el.addEventListener("click", this.handleClick)
+    }
   }
   revealAnimation() {
     const t = this.isStatic ? 1 : C(this.globeOpacity, 0, 1, 1)
-    ;(this.globeOpacity += 0.005),
-      (this.globeFillMaterial.opacity = 0.94 * t),
-      (this.globeRotationIncrement = 0.02 * (1 - t) + 0.001 * t),
-      t > 0.999 && (this.isRevealed = !0)
+    this.globeOpacity += 0.005
+    this.globeFillMaterial.opacity = 0.94 * t
+    this.globeRotationIncrement = 0.02 * (1 - t) + 0.001 * t
+    if (t > 0.999) this.isRevealed = true
   }
   autoRotateGlobe() {
-    if (this.isDragging || this.isScrolling || this.isStatic)
+    if (!this.isDragging || this.isScrolling || this.isStatic)
       this.globeContainer.rotation.y -= this.globeRotationIncrement
   }
   render(time = 0) {
     this.frame = time
-    this.autoRotateGlobe()
-    Math.abs(this.scale - this.targetScale) > 0.001 &&
-      ((this.scale -= 0.1 * (this.scale - this.targetScale)),
-      this.globeFill.scale.set(this.scale, this.scale, this.scale)),
-      !this.globeOff &&
-        this.isLoaded &&
-        (this.isRevealed || this.revealAnimation(),
-        this.renderer.render(this.scene, this.camera)),
-      (this.renderAnimationFrame = requestAnimationFrame(() => {
-        this.isRevealed &&
-        this.isStatic &&
-        this.arcTexturesLoaded === Q.length &&
-        this.isDiscTextureLoaded
-          ? this.renderer.render(this.scene, this.camera)
-          : this.render(time + 1)
-      }))
+    if (this.autoRotate) this.autoRotateGlobe()
+    if (Math.abs(this.scale - this.targetScale) > 0.001) {
+      this.scale -= 0.1 * (this.scale - this.targetScale)
+      this.globeContainer.scale.set(this.scale, this.scale, this.scale)
+    }
+    if (!this.globeOff && this.isLoaded) this.globeDots.animate()
+    if (!this.isRevealed) {
+      this.revealAnimation()
+    }
+    this.renderer.render(this.scene, this.camera)
+
+    this.renderAnimationFrame = requestAnimationFrame(() =>
+      this.isRevealed && this.isStatic
+        ? this.renderer.render(this.scene, this.camera)
+        : this.render(time + 1)
+    )
   }
 }
 
 // draw canvas on globe
 const div = document.getElementById("globe")
 
-new Globe(div)
+const g = new Globe(div)
+
+g.autoRotate = false

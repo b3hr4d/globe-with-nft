@@ -6,21 +6,21 @@ class ThreeClass {
     constructor() {
         this.renderer = new THREE.WebGLRenderer({
             alpha: true,
-            antialias: true,
-            preserveDrawingBuffer: true,
+            antialias: false,
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.z = 2;
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        // rotate camera to show bottom of globe
+        this.camera.position.z = 1000;
         this.scene = new THREE.Scene();
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.25;
         this.controls.enableZoom = true;
         this.controls.enablePan = false;
-        this.controls.minDistance = 1.2;
-        this.controls.maxDistance = 5;
+        this.controls.minDistance = 600;
+        this.controls.maxDistance = 1200;
     }
 }
 const defaultValues = new ThreeClass();
@@ -60,7 +60,7 @@ const ThreeProvider = ({ children }) => {
         w.document.body.appendChild(img);
     };
     return (React.createElement("div", { ref: globeRef, style: {
-            backgroundColor: "black",
+            backgroundColor: "#1b1b1b",
             position: "absolute",
             top: 0,
             left: 0,
@@ -68,14 +68,18 @@ const ThreeProvider = ({ children }) => {
             height: "100%",
         } },
         children,
-        React.createElement("button", { onClick: takeScreenshot }, "Take Screenshot")));
+        React.createElement("button", { onClick: takeScreenshot, style: {
+                position: "absolute",
+                top: 0,
+                left: 0,
+            } }, "Take Screenshot")));
 };
-const Sphere = ({ debug = false, ratio = 1, ...rest }) => {
+const Sphere = ({ debug = false, ratio = 1, radius = 1, ...rest }) => {
     const { scene } = useThree();
     React.useEffect(() => {
-        const geometry = new THREE.SphereGeometry(ratio, 64, 64);
+        const geometry = new THREE.SphereGeometry(radius, 64, 64);
         const material = new THREE.MeshBasicMaterial({
-            color: 0x000000,
+            color: 0xffffff,
             wireframe: debug,
             ...rest,
         });
@@ -84,10 +88,10 @@ const Sphere = ({ debug = false, ratio = 1, ...rest }) => {
         return () => {
             scene.remove(sphere);
         };
-    }, []);
+    }, [radius]);
     return null;
 };
-const MapTiles = ({ tiles, debug = false, ratio = 1, raidus = 1, ...rest }) => {
+const MapTiles = ({ tiles, debug = false, ratio = 1, raidus = 500, ...rest }) => {
     const { scene } = useThree();
     React.useEffect(() => {
         if (tiles?.length === 0)
@@ -102,8 +106,7 @@ const MapTiles = ({ tiles, debug = false, ratio = 1, raidus = 1, ...rest }) => {
                 side: THREE.DoubleSide,
             });
             const tile = new THREE.Mesh(geometry, material);
-            tile.position.setFromSphericalCoords(raidus * ratio, phi, theta);
-            tile.position.setFromSphericalCoords(ratio, phi, theta);
+            tile.position.setFromSphericalCoords(raidus, phi, theta);
             tile.position.normalize();
             tile.position.multiplyScalar(ratio);
             tile.lookAt(0, 0, 0);
@@ -116,41 +119,43 @@ const MapTiles = ({ tiles, debug = false, ratio = 1, raidus = 1, ...rest }) => {
     }, [tiles]);
     return null;
 };
-const MapTilesFlat = ({ tiles, debug = false, ratio = 1, raidus = 1, ...rest }) => {
+const MapDots = ({ radius }) => {
     const { scene } = useThree();
     React.useEffect(() => {
-        if (tiles?.length === 0)
-            return;
-        // make 2d CanvasTexture from tiles
-        const canvas = document.createElement("canvas");
-        canvas.width = 8192;
-        canvas.height = 4096;
-        const ctx = canvas.getContext("2d");
-        const width = 64;
-        const height = 64;
-        ctx.fillStyle = "red";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        //convert SphericalCoords to 2d coords
-        tiles.forEach(({ color, phi, theta }) => {
-            const x = (phi / (2 * Math.PI)) * canvas.width;
-            const y = (theta / Math.PI) * canvas.height;
-            ctx.fillStyle = `#${color.toString(16)}`;
-            ctx.fillRect(x, y, width, height);
-        });
-        const texture = new THREE.CanvasTexture(canvas);
-        const geometry = new THREE.PlaneGeometry(4, 2);
-        const material = new THREE.MeshBasicMaterial({
-            map: texture,
+        const group = new THREE.Group();
+        // Create 60000 tiny dots and spiral them around the sphere.
+        const DOT_COUNT = 60000;
+        // A hexagon with a radius of 2 pixels looks like a circle
+        const dotGeometry = new THREE.CircleGeometry(2, 5);
+        const dotMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
             side: THREE.DoubleSide,
         });
-        const tile = new THREE.Mesh(geometry, material);
-        tile.position.set(0, 0, 0);
-        tile.lookAt(0, 0, 0);
-        scene.add(tile);
+        // The XYZ coordinate of each dot
+        const positions = [];
+        // A random identifier for each dot
+        const rndId = [];
+        // The country border each dot falls within
+        const countryIds = [];
+        const vector = new THREE.Vector3();
+        for (let i = DOT_COUNT; i >= 0; i--) {
+            const phi = Math.acos(-1 + (2 * i) / DOT_COUNT);
+            const theta = Math.sqrt(DOT_COUNT * Math.PI) * phi;
+            // Pass the angle between this dot an the Y-axis (phi)
+            // Pass this dot’s angle around the y axis (theta)
+            // Scale each position by 600 (the radius of the globe)
+            // Move the dot to the newly calculated position
+            // Add the dot to the scene
+            const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+            dot.position.setFromSphericalCoords(radius, phi, theta);
+            dot.lookAt(0, 0, 0);
+            group.add(dot);
+        }
+        scene.add(group);
         return () => {
-            scene.remove(tile);
+            scene.remove(sphere);
         };
-    }, [tiles]);
+    }, [radius]);
     return null;
 };
 const App = () => {
@@ -165,7 +170,9 @@ const App = () => {
         };
         fetchTiles();
     }, []);
+    const radius = 600;
     return (React.createElement(ThreeProvider, null, loading ? ("Loading...") : (React.createElement(React.Fragment, null,
-        React.createElement(MapTilesFlat, { tiles: tiles })))));
+        React.createElement(Sphere, { radius: radius }),
+        React.createElement(MapDots, { radius: radius })))));
 };
 ReactDOM.render(React.createElement(App, null), document.getElementById("globeViz"));
