@@ -140,6 +140,7 @@ class Globe {
       this.mouse.x = t.clientX
       this.mouse.y = t.clientY
       this.handleDragging()
+      if (!this.isDragging) this.globeDots.handleMouseMove(t, this.camera)
     })
 
     define(this, "handleTouchMove", (t) => {
@@ -163,7 +164,7 @@ class Globe {
       this.oldMouseY = 0
       this.moveX = 0
       this.moveY = 0
-      this.targetScale = 1
+      // this.targetScale = 1
       this.globeDots.stopDragging()
     })
     define(this, "handleMouseDown", (t) => {

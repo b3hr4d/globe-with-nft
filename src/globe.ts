@@ -386,3 +386,4 @@ interface Tile
 type Intersects = { object: Tile }[] | undefined
 
 type Tiles = { tile: Tile; color: number; id: number }[]
+export {}

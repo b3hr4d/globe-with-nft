@@ -1,3 +1,4 @@
+"use strict";
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -56,26 +57,10 @@ var __rest = (this && this.__rest) || function (s, e) {
         }
     return t;
 };
-var _this = this;
+exports.__esModule = true;
 var ThreeClass = /** @class */ (function () {
     function ThreeClass() {
-        this.renderer = new THREE.WebGLRenderer({
-            alpha: true,
-            antialias: false
-        });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-        // rotate camera to show bottom of globe
-        this.camera.position.z = 1000;
-        this.scene = new THREE.Scene();
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.25;
-        this.controls.enableZoom = true;
-        this.controls.enablePan = false;
-        this.controls.minDistance = 600;
-        this.controls.maxDistance = 1200;
+        this.group = [];
     }
     return ThreeClass;
 }());
@@ -85,45 +70,38 @@ var useThree = function () { return React.useContext(GlobeContext); };
 var ThreeProvider = function (_a) {
     var children = _a.children, clickHandler = _a.clickHandler;
     var globeRef = React.useRef();
-    var _b = useThree(), renderer = _b.renderer, camera = _b.camera, scene = _b.scene;
+    var ObjRender = React.useRef();
+    var group = useThree().group;
     React.useEffect(function () {
-        if (globeRef) {
-            globeRef.current.appendChild(renderer.domElement);
+        if (globeRef.current) {
+            console.log(group);
+            ObjRender.current = ThreeRenderObjects({ controlType: "orbit" })(globeRef.current).objects(group);
+        }
+    }, [globeRef.current, group]);
+    React.useEffect(function () {
+        if (ObjRender.current) {
+            ObjRender.current.controls().enablePan = false;
         }
         var animate = function () {
-            requestAnimationFrame(animate);
-            renderer.render(scene, camera);
+            if (ObjRender.current) {
+                ObjRender.current.tick(); // render it
+                requestAnimationFrame(animate);
+            }
         };
         animate();
-        var onResize = function () {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        };
-        window.addEventListener("resize", onResize);
-        return function () {
-            window.removeEventListener("resize", onResize);
-        };
-    }, []);
-    // click event
-    var onMouseDown = function (e) {
-        var clientX = e.clientX, clientY = e.clientY;
-        var _a = globeRef.current.getBoundingClientRect(), left = _a.left, top = _a.top;
-        var x = clientX - left;
-        var y = clientY - top;
-        var vector = new THREE.Vector3((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1, 0.5);
-        vector.unproject(camera);
-        var raycaster = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
-        var intersects = raycaster.intersectObjects(scene.children);
-        if (intersects.length > 0) {
-            clickHandler(intersects[0], e);
-            globeRef.current.style.cursor = "pointer";
-        }
-        else {
-            globeRef.current.style.cursor = "default";
-        }
-    };
-    return (<div ref={globeRef} onClick={onMouseDown} style={{
+        return function () { };
+    }, [ObjRender.current]);
+    return (<div ref={globeRef} onClick={function () {
+            if (ObjRender.current) {
+                ObjRender.current.onClick(function (_, inter) {
+                    var _a;
+                    if ((_a = inter === null || inter === void 0 ? void 0 : inter.face) === null || _a === void 0 ? void 0 : _a.a) {
+                        var tileId = Math.floor((inter.face.a / 60000) * 10000) + 1;
+                        console.log(tileId, inter.face.a);
+                    }
+                });
+            }
+        }} style={{
             backgroundColor: "#1b1b1b",
             position: "absolute",
             top: 0,
@@ -136,21 +114,21 @@ var ThreeProvider = function (_a) {
 };
 var Sphere = function (_a) {
     var _b = _a.debug, debug = _b === void 0 ? false : _b, _c = _a.ratio, ratio = _c === void 0 ? 1 : _c, _d = _a.radius, radius = _d === void 0 ? 1 : _d, rest = __rest(_a, ["debug", "ratio", "radius"]);
-    var scene = useThree().scene;
+    var group = useThree().group;
     React.useEffect(function () {
         var geometry = new THREE.SphereGeometry(radius, 64, 64);
         var material = new THREE.MeshBasicMaterial(__assign({ color: 0xffffff, wireframe: debug }, rest));
         var sphere = new THREE.Mesh(geometry, material);
-        scene.add(sphere);
+        group.push(sphere);
         return function () {
-            scene.remove(sphere);
+            group.remove(sphere);
         };
     }, [radius]);
     return null;
 };
 var Tiles = function (_a) {
     var radius = _a.radius, tiles = _a.tiles;
-    var scene = useThree().scene;
+    var ThreeG = useThree().group;
     var _b = React.useMemo(function () {
         var ratio = radius / 450, geometry = new THREE.PlaneGeometry(12 * ratio, 12 * ratio), dotGeo = new THREE.BufferGeometry(), positions = [], colors = [], tilesIds = [], vector = new THREE.Vector3();
         tiles.forEach(function (_a) {
@@ -192,17 +170,18 @@ var Tiles = function (_a) {
             vertexShader: "\n            uniform float u_hover;\n            uniform float u_clicked;\n            attribute vec3 color;\n            attribute float tileId;\n            varying vec3 vRndId;\n            void main() {\n              vRndId = color;\n\n              if(u_hover == tileId) {\n                vRndId = vec3(1.0, 0.0, 0.0);\n              }\n              if(u_clicked == tileId) {\n                vRndId = vec3(0.0, 0.0, 0.0);\n              }\n              vec4 modelViewPosition = modelViewMatrix * vec4(position, 1.0);\n              gl_Position = projectionMatrix * modelViewPosition;\n            }",
             fragmentShader: "\n            varying vec3 vRndId;\n            void main() {         \n              gl_FragColor = vec4(vRndId, 1.0);\n            }"
         });
-        scene.add(new THREE.Mesh(points, material));
+        var mesh = new THREE.Mesh(points, material);
+        ThreeG.push(group.add(mesh));
         return function () {
-            scene.remove(group);
+            group.remove(group);
         };
     }, [positions, tilesIds, colors]);
-    return React.useMemo(function () { return tilesIds.filter(function (_, i) { return i % 3 === 0; }); }, [tilesIds]);
+    return null;
 };
 var App = function () {
     var _a = React.useState([]), tiles = _a[0], setTiles = _a[1];
     React.useEffect(function () {
-        var fetchTiles = function () { return __awaiter(_this, void 0, void 0, function () {
+        var fetchTiles = function () { return __awaiter(void 0, void 0, void 0, function () {
             var res, tiles;
             return __generator(this, function (_a) {
                 switch (_a.label) {
@@ -220,18 +199,8 @@ var App = function () {
         fetchTiles();
     }, []);
     var radius = 600;
-    var tilesData = React.useMemo(function () {
-        return Tiles({
-            tiles: tiles,
-            radius: radius
-        });
-    }, [tiles]);
-    var clickCallback = function (intersects, e) {
-        var tileId = tilesData[intersects.face.a];
-        console.log(tileId, intersects.point);
-    };
-    return (<ThreeProvider clickHandler={clickCallback}>
-      <Sphere radius={radius - 10} color={0x000000}/>
+    return (<ThreeProvider>
+      <Tiles tiles={tiles} radius={radius}/>
     </ThreeProvider>);
 };
 ReactDOM.render(<App />, document.getElementById("globeViz"));

@@ -1,28 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 class ThreeClass {
-    renderer;
-    camera;
-    scene;
-    controls;
+    group;
     constructor() {
-        this.renderer = new THREE.WebGLRenderer({
-            alpha: true,
-            antialias: false,
-        });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-        // rotate camera to show bottom of globe
-        this.camera.position.z = 1000;
-        this.scene = new THREE.Scene();
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.25;
-        this.controls.enableZoom = true;
-        this.controls.enablePan = false;
-        this.controls.minDistance = 600;
-        this.controls.maxDistance = 1200;
+        this.group = [];
     }
 }
 const defaultValues = new ThreeClass();
@@ -30,45 +11,37 @@ const GlobeContext = React.createContext(defaultValues);
 const useThree = () => React.useContext(GlobeContext);
 const ThreeProvider = ({ children, clickHandler, }) => {
     const globeRef = React.useRef();
-    const { renderer, camera, scene } = useThree();
+    const ObjRender = React.useRef();
+    const { group } = useThree();
     React.useEffect(() => {
-        if (globeRef) {
-            globeRef.current.appendChild(renderer.domElement);
+        if (globeRef.current) {
+            console.log(group);
+            ObjRender.current = ThreeRenderObjects({ controlType: "orbit" })(globeRef.current).objects(group);
+        }
+    }, [globeRef.current, group]);
+    React.useEffect(() => {
+        if (ObjRender.current) {
+            ObjRender.current.controls().enablePan = false;
         }
         const animate = () => {
-            requestAnimationFrame(animate);
-            renderer.render(scene, camera);
+            if (ObjRender.current) {
+                ObjRender.current.tick(); // render it
+                requestAnimationFrame(animate);
+            }
         };
         animate();
-        const onResize = () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        };
-        window.addEventListener("resize", onResize);
-        return () => {
-            window.removeEventListener("resize", onResize);
-        };
-    }, []);
-    // click event
-    const onMouseDown = (e) => {
-        const { clientX, clientY } = e;
-        const { left, top } = globeRef.current.getBoundingClientRect();
-        const x = clientX - left;
-        const y = clientY - top;
-        const vector = new THREE.Vector3((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1, 0.5);
-        vector.unproject(camera);
-        const raycaster = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
-        const intersects = raycaster.intersectObjects(scene.children);
-        if (intersects.length > 0) {
-            clickHandler(intersects[0], e);
-            globeRef.current.style.cursor = "pointer";
-        }
-        else {
-            globeRef.current.style.cursor = "default";
-        }
-    };
-    return (React.createElement("div", { ref: globeRef, onClick: onMouseDown, style: {
+        return () => { };
+    }, [ObjRender.current]);
+    return (React.createElement("div", { ref: globeRef, onClick: () => {
+            if (ObjRender.current) {
+                ObjRender.current.onClick((_, inter) => {
+                    if (inter?.face?.a) {
+                        const tileId = Math.floor((inter.face.a / 60000) * 10000) + 1;
+                        console.log(tileId, inter.face.a);
+                    }
+                });
+            }
+        }, style: {
             backgroundColor: "#1b1b1b",
             position: "absolute",
             top: 0,
@@ -78,7 +51,7 @@ const ThreeProvider = ({ children, clickHandler, }) => {
         } }, children));
 };
 const Sphere = ({ debug = false, ratio = 1, radius = 1, ...rest }) => {
-    const { scene } = useThree();
+    const { group } = useThree();
     React.useEffect(() => {
         const geometry = new THREE.SphereGeometry(radius, 64, 64);
         const material = new THREE.MeshBasicMaterial({
@@ -87,15 +60,15 @@ const Sphere = ({ debug = false, ratio = 1, radius = 1, ...rest }) => {
             ...rest,
         });
         const sphere = new THREE.Mesh(geometry, material);
-        scene.add(sphere);
+        group.push(sphere);
         return () => {
-            scene.remove(sphere);
+            group.remove(sphere);
         };
     }, [radius]);
     return null;
 };
 const Tiles = ({ radius, tiles }) => {
-    const { scene } = useThree();
+    const { group: ThreeG } = useThree();
     const { positions, tilesIds, colors } = React.useMemo(() => {
         const ratio = radius / 450, geometry = new THREE.PlaneGeometry(12 * ratio, 12 * ratio), dotGeo = new THREE.BufferGeometry(), positions = [], colors = [], tilesIds = [], vector = new THREE.Vector3();
         tiles.forEach(({ phi, theta, color, id }) => {
@@ -157,12 +130,13 @@ const Tiles = ({ radius, tiles }) => {
               gl_FragColor = vec4(vRndId, 1.0);
             }`,
         });
-        scene.add(new THREE.Mesh(points, material));
+        const mesh = new THREE.Mesh(points, material);
+        ThreeG.push(group.add(mesh));
         return () => {
-            scene.remove(group);
+            group.remove(group);
         };
     }, [positions, tilesIds, colors]);
-    return React.useMemo(() => tilesIds.filter((_, i) => i % 3 === 0), [tilesIds]);
+    return null;
 };
 const App = () => {
     const [tiles, setTiles] = React.useState([]);
@@ -175,15 +149,7 @@ const App = () => {
         fetchTiles();
     }, []);
     const radius = 600;
-    const tilesData = React.useMemo(() => Tiles({
-        tiles: tiles,
-        radius: radius,
-    }), [tiles]);
-    const clickCallback = (intersects, e) => {
-        const tileId = tilesData[intersects.face.a];
-        console.log(tileId, intersects.point);
-    };
-    return (React.createElement(ThreeProvider, { clickHandler: clickCallback },
-        React.createElement(Sphere, { radius: radius - 10, color: 0x000000 })));
+    return (React.createElement(ThreeProvider, null,
+        React.createElement(Tiles, { tiles: tiles, radius: radius })));
 };
 ReactDOM.render(React.createElement(App, null), document.getElementById("globeViz"));

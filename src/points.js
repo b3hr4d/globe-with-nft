@@ -7,6 +7,7 @@ import {
   PlaneGeometry,
   Raycaster,
   ShaderMaterial,
+  SphereGeometry,
   Vector2,
   Vector3,
 } from "../public/packages/three.module.js"
@@ -34,16 +35,15 @@ export default class Points extends Group {
       colors = [],
       tilesIds = [],
       vector = new Vector3(),
-      clrs = {
-        grey: [0.5, 0.5, 0.5],
-        red: [1.0, 0.0, 0.0],
-        green: [0.0, 1.0, 0.0],
-        blue: [0.0, 0.0, 1.0],
-        yellow: [1.0, 1.0, 0.0],
-        magenta: [1.0, 0.0, 1.0],
-        cyan: [0.0, 1.0, 1.0],
-        white: [1.0, 1.0, 1.0],
-      }
+      clrs = [
+        [0.0, 1.0, 0.0],
+        [1.0, 1.0, 1.0],
+      ]
+
+    // make sphere inside all points to prevent clicking through
+    const sphereMesh = new Mesh(new SphereGeometry(radius - 10))
+
+    this.add(sphereMesh)
 
     for (let i = 1; i <= dots; i++) {
       const phi = Math.acos(-1 + (2 * i) / (dots + 1))
@@ -54,7 +54,7 @@ export default class Points extends Group {
       dotGeo.lookAt(vector)
       dotGeo.translate(vector.x, vector.y, vector.z)
 
-      const rndClr = clrs[Math.random() > 0.5 ? "green" : "white"]
+      const rndClr = clrs[Math.floor(Math.random() * clrs.length)]
 
       for (let j = 0; j <= 3; j += 3) {
         for (let k = 0; k <= 6; k += 3) {
@@ -69,8 +69,10 @@ export default class Points extends Group {
 
     const points = new BufferGeometry()
     points.setAttribute("position", new Float32BufferAttribute(positions, 3))
-    points.setAttribute("tileId", new Float32BufferAttribute(tilesIds, 18))
+    points.setAttribute("tileId", new Float32BufferAttribute(tilesIds, 3))
     points.setAttribute("color", new Float32BufferAttribute(colors, 3))
+
+    this.tilesIds = tilesIds.filter((_, i) => i % 3 === 0)
 
     this.material = new ShaderMaterial({
       transparent: true,
@@ -78,23 +80,23 @@ export default class Points extends Group {
       uniforms: {
         u_time: { value: 0 },
         u_hover: { value: 0 },
+        u_clicked: { value: 0 },
         u_drag_time: { value: 0 },
-        u_resolution: { value: new Vector2() },
       },
       vertexShader: `
         uniform float u_time;
         uniform float u_drag_time;
-        uniform vec2 u_resolution;
+        uniform float u_hover;
+        uniform float u_clicked;
         attribute vec3 color;
         attribute float tileId;
-        varying vec3 vRndId;
 
+        varying vec3 vRndId;
         varying float pct;
         void main() {
           float rnd = 0.1;
           vRndId = color;
 
-          vec2 st = position.xy/u_resolution;
           pct = min(1.0, u_time / (1000. / max(0.2, 0.2 * sin(fract(rnd)))));
           float vNormal = rnd + ((1.0 - rnd) * pct);
           vNormal = rnd + ((1.0 - rnd));
@@ -102,6 +104,15 @@ export default class Points extends Group {
           if (u_drag_time > 0.) {
             vNormal -= ((sin(u_time / 400.0 * rnd) + 1.0) * 0.04) * min(1., u_drag_time / 1200.0);
           }
+
+          if(u_hover == tileId) {
+            vRndId = vec3(1.0, 0.0, 0.0);
+          }
+
+          if(u_clicked == tileId) {
+            vRndId = vec3(0.0, 0.0, 0.0);
+          }
+
           vec4 modelViewPosition = modelViewMatrix * vec4(position, vNormal);
           gl_Position = projectionMatrix * modelViewPosition;
         }`,
@@ -113,20 +124,14 @@ export default class Points extends Group {
           float rnd = 0.1;
           float v = sin(u_time / 200.0 * rnd);
           float alpha = pct * 0.7 + v * 0.2;
-          float r = 0.19;
-          float g = 0.42;
-          float b = 0.65;
-
-          vec3 color = vRndId;
-          gl_FragColor = vec4(color, alpha);
+          
+          gl_FragColor = vec4(vRndId, alpha);
         }`,
     })
 
     const mesh = new Mesh(points, this.material)
     this.add(mesh)
 
-    this.material.uniforms.u_resolution.value.x = window.innerWidth
-    this.material.uniforms.u_resolution.value.y = window.innerHeight
     this.startTime = performance.now()
     this.dragStartTime = 0
     this.callback()
@@ -138,8 +143,14 @@ export default class Points extends Group {
     this.raycaster.setFromCamera(mouse, camera)
 
     const intersects = this.raycaster.intersectObjects(this.children)
-    if (intersects.length > 0) {
-      console.log(intersects[0].point)
+
+    if (intersects.length > 0 && intersects[0].object !== this.children[0]) {
+      const tileId = this.tilesIds[intersects[0].face.a]
+      // console.log(tileId, intersects[0].point)
+      this.material.uniforms.u_hover.value = tileId
+      if (e.type === "click") {
+        this.material.uniforms.u_clicked.value = tileId
+      }
     } else {
       this.material.uniforms.u_hover.value = 0
     }

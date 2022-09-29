@@ -16,8 +16,9 @@
     "jsdom": "^20.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-globe.gl": "^2.22.3",
-    "three": "^0.144.0"
+    "react-globe.gl-fork": "^2.22.4",
+    "three": "^0.144.0",
+    "three-render-objects-fork": "^1.27.8"
   },
   "devDependencies": {
     "@types/d3": "^7.4.0",

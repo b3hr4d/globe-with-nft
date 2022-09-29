@@ -1,5 +1,4 @@
 // Gen random data
-export {}
 const config = {
   tilesColor: [
     0x00ff00, 0x00ff00, 0x00ff00, 0x00ff00, 0xffffff, 0xffffff, 0x00c3ff,
